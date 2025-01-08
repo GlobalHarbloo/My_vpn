@@ -6,6 +6,7 @@ import (
 	"log"
 
 	_ "github.com/lib/pq"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var db *sql.DB
@@ -64,14 +65,22 @@ func RunMigration() {
 	fmt.Println("Migrationd completed successfully!")
 }
 
-func RegisterUser(username string) error {
+func RegisterUser(username, password string) error {
 
-	db := GetDB()
-
-	_, err := db.Exec(`INSERT INTO users (username, password) VALUES ($1, 'default')`, username)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		log.Println("Error register user: ", err)
-		return err
+		return fmt.Errorf("Ошибка при хешировании пароля: %v", err)
 	}
+	query := `
+    INSERT INTO users (username, password)
+    VALUES ($1, $2)
+    RETURNING id`
+	var userID int
+	err = db.QueryRow(query, username, string(hashedPassword)).Scan(&userID)
+	if err != nil {
+		return fmt.Errorf("Ошибка при создании пользователя: %v", err)
+	}
+
+	log.Printf("Пользователь создан: %s (ID: %d)", username, userID)
 	return nil
 }

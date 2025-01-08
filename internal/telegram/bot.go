@@ -61,8 +61,9 @@ func StartBot() {
 
 func handleRegister(update tgbotapi.Update, bot *tgbotapi.BotAPI) {
 	username := update.Message.Text
+	password := update.Message.Text
 
-	err := database.RegisterUser(username)
+	err := database.RegisterUser(username, password)
 	if err != nil {
 		bot.Send(tgbotapi.NewMessage(update.Message.Chat.ID, "Failed to register user!"))
 		return
