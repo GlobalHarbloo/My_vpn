@@ -21,5 +21,9 @@ func main() {
 
 	fmt.Println("VPN-сервер работает...")
 
+	token := "8089259249:AAGN7uEGOGpXVY86IHTJ7h8hcL194_6ix2I"
+	telegram.InitBot(token)
+
+	// Запуск бота
 	telegram.StartBot()
 }
