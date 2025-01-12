@@ -20,104 +20,104 @@ func InitBot(token string) {
 		log.Fatal("Failed to create bot: ", err)
 	}
 
-	// Настройка логгера
 	logger = log.New(log.Writer(), "LOG: ", log.Ldate|log.Ltime|log.Lshortfile)
 	logger.Println("Bot successfully initialized.")
 }
 
-// Обработчик команд
+// Обработка команд
 func HandleCommands(update tgbotapi.Update) {
-	if update.Message == nil {
+	if update.Message == nil || update.Message.Text == "" {
 		return
 	}
 
-	// Ответ на команду /start
-	if update.Message.Text == "/start" {
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Welcome! Type /help for available commands.")
-		bot.Send(msg)
+	command, args := parseCommand(update.Message.Text)
+
+	switch command {
+	case "/start":
+		sendMessage(update.Message.Chat.ID, "Welcome! Type /help for available commands.")
+	case "/help":
+		sendMessage(update.Message.Chat.ID, "Available commands: /register <username> <email> <password>, /login <username/email> <password>, /updatepassword <email> <new_password>")
+	case "/register":
+		handleRegister(update, args)
+	case "/login":
+		handleLogin(update, args)
+	case "/updatepassword":
+		handleUpdatePassword(update, args)
+	default:
+		sendMessage(update.Message.Chat.ID, "Unknown command. Type /help for available commands.")
+	}
+}
+
+// Парсинг команды и аргументов
+func parseCommand(input string) (string, []string) {
+	parts := strings.Fields(input)
+	if len(parts) == 0 {
+		return "", nil
+	}
+	return parts[0], parts[1:]
+}
+
+// Отправка сообщения с обработкой ошибок
+func sendMessage(chatID int64, text string) {
+	msg := tgbotapi.NewMessage(chatID, text)
+	if _, err := bot.Send(msg); err != nil {
+		logger.Printf("Failed to send message: %v\n", err)
+	}
+}
+
+// Обработка команды регистрации
+func handleRegister(update tgbotapi.Update, args []string) {
+	if len(args) < 3 {
+		sendMessage(update.Message.Chat.ID, "Usage: /register <username> <email> <password>")
 		return
 	}
 
-	// Ответ на команду /help
-	if update.Message.Text == "/help" {
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Available commands: /register, /login, /updatepassword")
-		bot.Send(msg)
+	username, email, password := args[0], args[1], args[2]
+	user, err := database.RegisterUser(username, email, password)
+	if err != nil {
+		sendMessage(update.Message.Chat.ID, fmt.Sprintf("Error registering user: %s", err))
 		return
 	}
 
-	// Ответ на команду /register
-	if strings.HasPrefix(update.Message.Text, "/register") {
-		parts := strings.SplitN(update.Message.Text, " ", 4)
-		if len(parts) < 4 {
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Usage: /register <username> <email> <password>")
-			bot.Send(msg)
-			return
-		}
+	sendMessage(update.Message.Chat.ID, fmt.Sprintf("User %s registered successfully!", user.Username))
+}
 
-		username, email, password := parts[1], parts[2], parts[3]
-		user, err := database.RegisterUser(username, email, password)
-		if err != nil {
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, fmt.Sprintf("Error registering user: %s", err))
-			bot.Send(msg)
-			return
-		}
-
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, fmt.Sprintf("User %s registered successfully!", user.Username))
-		bot.Send(msg)
+// Обработка команды входа
+func handleLogin(update tgbotapi.Update, args []string) {
+	if len(args) < 2 {
+		sendMessage(update.Message.Chat.ID, "Usage: /login <username/email> <password>")
 		return
 	}
 
-	// Ответ на команду /login
-	if strings.HasPrefix(update.Message.Text, "/login") {
-		parts := strings.SplitN(update.Message.Text, " ", 3)
-		if len(parts) < 3 {
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Usage: /login <username/email> <password>")
-			bot.Send(msg)
-			return
-		}
-
-		identifier, password := parts[1], parts[2]
-		user, err := database.AuthenticateUser(identifier, password)
-		if err != nil {
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, fmt.Sprintf("Error logging in: %s", err))
-			bot.Send(msg)
-			return
-		}
-
-		// Сохранение Telegram ID
-		err = database.LinkTelegramIDToUser(user.ID, int64(update.Message.From.ID))
-		if err != nil {
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, fmt.Sprintf("Error linking Telegram ID: %s", err))
-			bot.Send(msg)
-			return
-		}
-
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, fmt.Sprintf("User %s logged in successfully!", user.Username))
-		bot.Send(msg)
+	identifier, password := args[0], args[1]
+	user, err := database.AuthenticateUser(identifier, password)
+	if err != nil {
+		sendMessage(update.Message.Chat.ID, fmt.Sprintf("Error logging in: %s", err))
 		return
 	}
 
-	// Ответ на команду /updatepassword
-	if strings.HasPrefix(update.Message.Text, "/updatepassword") {
-		parts := strings.SplitN(update.Message.Text, " ", 3)
-		if len(parts) < 3 {
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Usage: /updatepassword <email> <new_password>")
-			bot.Send(msg)
-			return
-		}
-
-		email, newPassword := parts[1], parts[2]
-		err := database.UpdatePasswordByEmail(email, newPassword)
-		if err != nil {
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, fmt.Sprintf("Error updating password: %s", err))
-			bot.Send(msg)
-			return
-		}
-
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Password updated successfully!")
-		bot.Send(msg)
+	if err := database.LinkTelegramIDToUser(user.ID, int64(update.Message.From.ID)); err != nil {
+		sendMessage(update.Message.Chat.ID, fmt.Sprintf("Error linking Telegram ID: %s", err))
 		return
 	}
+
+	sendMessage(update.Message.Chat.ID, fmt.Sprintf("User %s logged in successfully!", user.Username))
+}
+
+// Обработка команды смены пароля
+func handleUpdatePassword(update tgbotapi.Update, args []string) {
+	if len(args) < 2 {
+		sendMessage(update.Message.Chat.ID, "Usage: /updatepassword <email> <new_password>")
+		return
+	}
+
+	email, newPassword := args[0], args[1]
+	if err := database.UpdatePasswordByEmail(email, newPassword); err != nil {
+		sendMessage(update.Message.Chat.ID, fmt.Sprintf("Error updating password: %s", err))
+		return
+	}
+
+	sendMessage(update.Message.Chat.ID, "Password updated successfully!")
 }
 
 // Запуск бота

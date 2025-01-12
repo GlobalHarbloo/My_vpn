@@ -94,8 +94,8 @@ type User struct {
 	Email             string
 	TariffID          int
 	UsedTraffic       int64
-	SubscriptionStart string
-	SubscriptionEnd   string
+	SubscriptionStart sql.NullTime // Используем sql.NullTime для возможного NULL значения
+	SubscriptionEnd   sql.NullTime
 	CreatedAt         string
 }
 
@@ -107,26 +107,34 @@ type Tariff struct {
 }
 
 // Функция авторизации пользователя
+// Функция авторизации пользователя с проверкой хешированного пароля
+// Функция авторизации пользователя с проверкой хешированного пароля
 func AuthenticateUser(identifier, password string) (*User, error) {
+	query := `
+        SELECT id, username, email, COALESCE(tariff_id, 1) AS tariff_id, used_traffic, 
+               subscription_start, subscription_end, created_at, password
+        FROM users
+        WHERE (username = $1 OR email = $1)
+    `
 	var user User
+	var storedPassword string
 
-	query := `SELECT id, username, email, password, tariff_id, used_traffic, subscription_start, subscription_end, created_at 
-	FROM users WHERE username = $1 OR email = $1`
-	err := db.QueryRow(query, identifier).Scan(&user.ID, &user.Username, &user.Email, &user.Password, &user.TariffID,
-		&user.UsedTraffic, &user.SubscriptionStart, &user.SubscriptionEnd, &user.CreatedAt)
+	// Запросим пользователя и его хешированный пароль
+	err := db.QueryRow(query, identifier).Scan(
+		&user.ID, &user.Username, &user.Email, &user.TariffID, &user.UsedTraffic,
+		&user.SubscriptionStart, &user.SubscriptionEnd, &user.CreatedAt, &storedPassword,
+	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			logger.Printf("User not found: %v\n", identifier)
 			return nil, fmt.Errorf("user not found")
 		}
-		logger.Printf("Error fetching user: %v\n", err)
-		return nil, err
+		return nil, fmt.Errorf("error authenticating user: %v", err)
 	}
 
-	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password))
+	// Сравниваем пароли
+	err = bcrypt.CompareHashAndPassword([]byte(storedPassword), []byte(password))
 	if err != nil {
-		logger.Printf("Invalid password for user: %v\n", identifier)
-		return nil, fmt.Errorf("invalid password")
+		return nil, fmt.Errorf("incorrect password")
 	}
 
 	return &user, nil
@@ -214,18 +222,20 @@ func GetAllTariffs() ([]Tariff, error) {
 // RegisterUser регистрирует нового пользователя в базе данных
 func RegisterUser(username, email, password string) (*User, error) {
 	// Проверка уникальности имени пользователя и email
-	var count int
-	query := `
-    INSERT INTO users (username, email, password, tariff_id, created_at)
-    VALUES ($1, $2, $3, 1, CURRENT_TIMESTAMP)  -- тариф по умолчанию 1
-    RETURNING id, username, email, tariff_id, used_traffic, subscription_start, subscription_end, created_at
-`
-	err := db.QueryRow(query, username, email).Scan(&count)
+	var exists bool
+	checkQuery := `
+		SELECT EXISTS(
+			SELECT 1 
+			FROM users 
+			WHERE username = $1 OR email = $2
+		)
+	`
+	err := db.QueryRow(checkQuery, username, email).Scan(&exists)
 	if err != nil {
 		logger.Printf("Error checking user uniqueness: %v\n", err)
 		return nil, fmt.Errorf("error checking user uniqueness: %v", err)
 	}
-	if count > 0 {
+	if exists {
 		return nil, fmt.Errorf("username or email already exists")
 	}
 
@@ -237,13 +247,13 @@ func RegisterUser(username, email, password string) (*User, error) {
 	}
 
 	// Вставка нового пользователя в базу данных
-	query = `
-        INSERT INTO users (username, email, password, created_at)
-        VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
-        RETURNING id, username, email, tariff_id, used_traffic, subscription_start, subscription_end, created_at
-    `
+	insertQuery := `
+		INSERT INTO users (username, email, password, tariff_id, created_at)
+		VALUES ($1, $2, $3, 1, CURRENT_TIMESTAMP)  -- тариф по умолчанию 1
+		RETURNING id, username, email, tariff_id, used_traffic, subscription_start, subscription_end, created_at
+	`
 	var user User
-	err = db.QueryRow(query, username, email, hashedPassword).Scan(
+	err = db.QueryRow(insertQuery, username, email, hashedPassword).Scan(
 		&user.ID, &user.Username, &user.Email, &user.TariffID, &user.UsedTraffic,
 		&user.SubscriptionStart, &user.SubscriptionEnd, &user.CreatedAt,
 	)

@@ -44,3 +44,26 @@ LOG: 2025/01/10 03:02:08 db.go:247: Error registering user: sql: Scan error on c
 LOG: 2025/01/10 03:05:03 db.go:36: Successfully connected to PostgreSQL!
 LOG: 2025/01/10 03:05:03 db.go:87: Migrations completed successfully!
 LOG: 2025/01/10 03:05:30 db.go:225: Error checking user uniqueness: pq: got 2 parameters but the statement requires 3
+LOG: 2025/01/12 00:58:53 db.go:36: Successfully connected to PostgreSQL!
+LOG: 2025/01/12 00:58:53 db.go:87: Migrations completed successfully!
+LOG: 2025/01/12 14:42:27 db.go:36: Successfully connected to PostgreSQL!
+LOG: 2025/01/12 14:42:27 db.go:87: Migrations completed successfully!
+LOG: 2025/01/12 14:43:50 db.go:225: Error checking user uniqueness: pq: got 2 parameters but the statement requires 3
+LOG: 2025/01/12 14:46:07 db.go:36: Successfully connected to PostgreSQL!
+LOG: 2025/01/12 14:46:07 db.go:87: Migrations completed successfully!
+LOG: 2025/01/12 14:48:04 db.go:119: User not found: glebasik_k
+LOG: 2025/01/12 14:48:59 db.go:122: Error fetching user: sql: Scan error on column index 4, name "tariff_id": converting NULL to int is unsupported
+LOG: 2025/01/12 15:00:06 db.go:36: Successfully connected to PostgreSQL!
+LOG: 2025/01/12 15:00:06 db.go:87: Migrations completed successfully!
+LOG: 2025/01/12 15:00:21 db.go:122: Error fetching user: sql: Scan error on column index 4, name "tariff_id": converting NULL to int is unsupported
+LOG: 2025/01/12 15:01:44 db.go:36: Successfully connected to PostgreSQL!
+LOG: 2025/01/12 15:01:44 db.go:87: Migrations completed successfully!
+LOG: 2025/01/12 15:01:57 db.go:123: Error authenticating user: sql: no rows in result set
+LOG: 2025/01/12 15:08:04 db.go:36: Successfully connected to PostgreSQL!
+LOG: 2025/01/12 15:08:04 db.go:87: Migrations completed successfully!
+LOG: 2025/01/12 15:08:14 db.go:123: Error authenticating user: sql: no rows in result set
+LOG: 2025/01/12 15:09:34 db.go:36: Successfully connected to PostgreSQL!
+LOG: 2025/01/12 15:09:34 db.go:87: Migrations completed successfully!
+LOG: 2025/01/12 15:11:10 db.go:36: Successfully connected to PostgreSQL!
+LOG: 2025/01/12 15:11:10 db.go:87: Migrations completed successfully!
+LOG: 2025/01/12 15:14:39 db.go:265: User registered successfully: glebasik
