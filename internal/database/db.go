@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"os"
 
 	_ "github.com/lib/pq"
 	"golang.org/x/crypto/bcrypt"
@@ -14,15 +13,16 @@ var db *sql.DB
 var logger *log.Logger
 
 func InitDB() {
-	connStr := os.Getenv("DATABASE_URL")
+	connStr := "postgres://new_user:new_password@localhost/vpn_service?sslmode=disable"
 	var err error
 	db, err = sql.Open("postgres", connStr)
 	if err != nil {
-		log.Fatal("Ошибка подключения к базе данных:", err)
+		log.Fatalf("Ошибка подключения к базе данных: %v", err)
 	}
 
-	if err = db.Ping(); err != nil {
-		log.Fatal("Ошибка проверки соединения с базой данных:", err)
+	err = db.Ping()
+	if err != nil {
+		log.Fatalf("Ошибка проверки соединения с базой данных: %v", err)
 	}
 
 	log.Println("Подключение к базе данных успешно!")
