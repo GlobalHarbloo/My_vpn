@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"os"
 
 	_ "github.com/lib/pq"
 	"golang.org/x/crypto/bcrypt"
@@ -13,7 +14,7 @@ var db *sql.DB
 var logger *log.Logger
 
 func InitDB() {
-	connStr := "postgres://new_user:new_password@localhost/vpn_service?sslmode=disable"
+	connStr := "postgres://vpn_user:S62uLkkXa1UZ@localhost/vpn_service?sslmode=disable"
 	var err error
 	db, err = sql.Open("postgres", connStr)
 	if err != nil {
@@ -24,6 +25,13 @@ func InitDB() {
 	if err != nil {
 		log.Fatalf("Ошибка проверки соединения с базой данных: %v", err)
 	}
+
+	// Initialize the logger
+	logFile, err := os.OpenFile("database.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Fatalf("Ошибка открытия файла лога: %v", err)
+	}
+	logger = log.New(logFile, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile)
 
 	log.Println("Подключение к базе данных успешно!")
 }
@@ -203,7 +211,7 @@ func GetAllTariffs() ([]Tariff, error) {
 		tariffs = append(tariffs, tariff)
 	}
 
-	if err = rows.Err(); err != nil {
+	if err == rows.Err() || err != nil {
 		logger.Printf("Error in rows iteration: %v\n", err)
 		return nil, fmt.Errorf("error in rows iteration: %v", err)
 	}
