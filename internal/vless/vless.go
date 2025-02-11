@@ -50,7 +50,8 @@ func addClientToV2RayConfig(clientUUID string) error {
 	clients := config["clients"].([]interface{})
 	clients = append(clients, map[string]interface{}{
 		"id":      clientUUID,
-		"alterId": 64,
+		"alterId": 0,
+		"email":   "user@example.com",
 	})
 	config["clients"] = clients
 
@@ -76,7 +77,7 @@ func restartV2Ray() error {
 	return nil
 }
 
-func startV2Ray() error {
+func StartV2Ray() error {
 	cmd := exec.Command("systemctl", "start", "v2ray")
 	err := cmd.Run()
 	if err != nil {
