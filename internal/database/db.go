@@ -14,26 +14,18 @@ var db *sql.DB
 var logger *log.Logger
 
 func InitDB() {
-	// Настройка логгера
-	logFile, err := os.OpenFile("server.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
-	if err != nil {
-		log.Fatal("Failed to open log file: ", err)
-	}
-	logger = log.New(logFile, "LOG: ", log.Ldate|log.Ltime|log.Lshortfile)
-
-	// Подключение к базе данных
-	connStr := "user=postgres password=root dbname=vpn_service sslmode=disable"
+	connStr := os.Getenv("DATABASE_URL")
+	var err error
 	db, err = sql.Open("postgres", connStr)
 	if err != nil {
-		logger.Fatal("Error opening database: ", err)
+		log.Fatal("Ошибка подключения к базе данных:", err)
 	}
 
-	err = db.Ping()
-	if err != nil {
-		logger.Fatal("Error connecting to database: ", err)
+	if err = db.Ping(); err != nil {
+		log.Fatal("Ошибка проверки соединения с базой данных:", err)
 	}
 
-	logger.Println("Successfully connected to PostgreSQL!")
+	log.Println("Подключение к базе данных успешно!")
 }
 
 func GetDB() *sql.DB {

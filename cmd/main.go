@@ -3,27 +3,28 @@ package main
 import (
 	"fmt"
 	"log"
-	datebase "vpn-service/internal/database"
+	"vpn-service/internal/database"
 	"vpn-service/internal/telegram"
 	"vpn-service/internal/wireguard"
 )
 
 func main() {
+	// Инициализация базы данных
+	database.InitDB()
+	database.RunMigration()
 
-	datebase.InitDB()
-
-	datebase.RunMigration()
-
+	// Запуск WireGuard
 	err := wireguard.StartWireGuard()
 	if err != nil {
 		log.Fatal("Ошибка при запуске WireGuard:", err)
 	}
-
 	fmt.Println("VPN-сервер работает...")
 
+	// Запуск Telegram-бота
 	token := "8089259249:AAGN7uEGOGpXVY86IHTJ7h8hcL194_6ix2I"
 	telegram.InitBot(token)
-
-	// Запуск бота
 	telegram.StartBot()
+
+	// Блокировка основного потока, чтобы сервер продолжал работать
+	select {}
 }

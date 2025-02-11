@@ -67,3 +67,10 @@ LOG: 2025/01/12 15:09:34 db.go:87: Migrations completed successfully!
 LOG: 2025/01/12 15:11:10 db.go:36: Successfully connected to PostgreSQL!
 LOG: 2025/01/12 15:11:10 db.go:87: Migrations completed successfully!
 LOG: 2025/01/12 15:14:39 db.go:265: User registered successfully: glebasik
+LOG: 2025/01/12 15:16:49 db.go:36: Successfully connected to PostgreSQL!
+LOG: 2025/01/12 15:16:49 db.go:87: Migrations completed successfully!
+LOG: 2025/01/12 15:17:51 db.go:189: Password updated successfully for email: glebsapronov12@gmail.com
+LOG: 2025/01/12 15:18:11 db.go:189: Password updated successfully for email: glebsapronov12@gmail.com
+LOG: 2025/01/12 15:19:26 db.go:148: Failed to link Telegram ID: pq: повторяющееся значение ключа нарушает ограничение уникальности "users_telegram_id_key"
+LOG: 2025/01/12 22:28:54 db.go:36: Successfully connected to PostgreSQL!
+LOG: 2025/01/12 22:28:55 db.go:87: Migrations completed successfully!

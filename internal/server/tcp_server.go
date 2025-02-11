@@ -59,54 +59,35 @@ func StartServer() {
 
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
-	clientAddr := conn.RemoteAddr().String()
-	fmt.Println("New client connected:", clientAddr)
+	conn.SetDeadline(time.Now().Add(5 * time.Minute))
 
 	writer := bufio.NewWriter(conn)
 	reader := bufio.NewReader(conn)
 
-	// Приветственное сообщение
-	writer.WriteString("Welcome to the VPN server! Type your command (PING, HELLO, STATS, QUIT):\n")
+	writer.WriteString("Welcome to the VPN server! Type HELP for commands.\n")
 	writer.Flush()
 
 	for {
-		// Читаем сообщение от клиента
 		message, err := reader.ReadString('\n')
 		if err != nil {
-			log.Println("Error reading message from", clientAddr, ":", err)
+			log.Println("Client disconnected or error:", err)
 			break
 		}
+
 		message = strings.TrimSpace(message)
-		log.Println("Received message from", clientAddr, ":", message)
-
-		// Если команда пустая, просим клиента ввести снова
-		if len(message) == 0 {
-			writer.WriteString("Empty command. Please try again.\n")
-			writer.Flush()
-			continue
-		}
-
-		// Обрабатываем команды
 		switch strings.ToUpper(message) {
 		case "PING":
 			writer.WriteString("PONG\n")
-		case "HELLO":
-			writer.WriteString("Hello, client!\n")
+		case "HELP":
+			writer.WriteString("Available commands: PING, STATS, QUIT\n")
 		case "STATS":
-			uptime := time.Since(startTime)
-			writer.WriteString(fmt.Sprintf("Server uptime: %v\nActive clients: %d\n", uptime, atomic.LoadInt32(&activeClients)))
-		case "TIME":
-			writer.WriteString("Current time is: " + time.Now().Format("2006-01-02 15:04:05") + "\n")
+			writer.WriteString(fmt.Sprintf("Active clients: %d\n", atomic.LoadInt32(&activeClients)))
 		case "QUIT":
 			writer.WriteString("Goodbye!\n")
 			writer.Flush()
-			log.Println("Client disconnected:", clientAddr)
-
-			// Уменьшаем счетчик активных клиентов при отключении
-			atomic.AddInt32(&activeClients, -1)
 			return
 		default:
-			writer.WriteString("Unknown command\n")
+			writer.WriteString("Unknown command. Type HELP for a list of commands.\n")
 		}
 		writer.Flush()
 	}
