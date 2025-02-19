@@ -1,96 +1,131 @@
-package client
+package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
+	"os/exec"
+	"time"
+
+	"gioui.org/app"
+	"gioui.org/font/gofont"
+	"gioui.org/io/system"
+	"gioui.org/layout"
+	"gioui.org/unit"
+	"gioui.org/widget"
+	"gioui.org/widget/material"
 
 	"github.com/google/uuid"
 )
 
-type ConnectRequest struct {
-	Email string `json:"email"`
-	UUID  string `json:"uuid"`
+var (
+	usernameInput widget.Editor
+	emailInput    widget.Editor
+	passwordInput widget.Editor
+	registerBtn   widget.Clickable
+	loginBtn      widget.Clickable
+	connectBtn    widget.Clickable
+	statusLabel   widget.Label
+)
+
+func main() {
+	go func() {
+		w := app.NewWindow(
+			app.Title("VPN Client"),
+			app.Size(unit.Dp(400), unit.Dp(600)),
+		)
+		if err := loop(w); err != nil {
+			fmt.Println("Error:", err)
+		}
+		os.Exit(0)
+	}()
+	app.Main()
 }
 
-type ConnectResponse struct {
-	ClientConfig string `json:"clientConfig"`
+func loop(w *app.Window) error {
+	th := material.NewTheme(gofont.Collection())
+	var ops layout.Ops
+
+	for {
+		e := <-w.Events()
+		switch e := e.(type) {
+		case system.DestroyEvent:
+			return e.Err
+		case system.FrameEvent:
+			gtx := layout.NewContext(&ops, e)
+			layout.Flex{
+				Axis:    layout.Vertical,
+				Spacing: layout.SpaceEvenly,
+			}.Layout(gtx,
+				layout.Rigid(material.H1(th, "VPN Client").Layout),
+				layout.Rigid(material.Editor(th, &usernameInput, "Username").Layout),
+				layout.Rigid(material.Editor(th, &emailInput, "Email").Layout),
+				layout.Rigid(material.Editor(th, &passwordInput, "Password").Layout),
+				layout.Rigid(material.Button(th, &registerBtn, "Register").Layout),
+				layout.Rigid(material.Button(th, &loginBtn, "Login").Layout),
+				layout.Rigid(material.Button(th, &connectBtn, "Connect to VPN").Layout),
+				layout.Rigid(material.Label(th, unit.Dp(14), statusLabel.Text).Layout),
+			)
+			e.Frame(gtx.Ops)
+
+			if registerBtn.Clicked() {
+				go register()
+			}
+			if loginBtn.Clicked() {
+				go login()
+			}
+			if connectBtn.Clicked() {
+				go connectVPN()
+			}
+		}
+	}
 }
 
-// Генерация нового UUID
-func generateUUID() string {
-	return uuid.NewString()
-}
-
-// Сохранение UUID в локальный файл
-func saveUUIDToFile(uuid string) error {
-	return os.WriteFile("uuid.txt", []byte(uuid), 0644)
-}
-
-// Чтение UUID из локального файла
-func readUUIDFromFile() (string, error) {
-	data, err := os.ReadFile("uuid.txt")
+func register() {
+	uuid := uuid.New().String()
+	resp, err := http.PostForm("http://your_server_ip/register", map[string][]string{
+		"username": {usernameInput.Text()},
+		"email":    {emailInput.Text()},
+		"password": {passwordInput.Text()},
+		"uuid":     {uuid},
+	})
 	if err != nil {
-		return "", err
-	}
-	return string(data), nil
-}
-
-// Получение UUID (создаёт новый, если отсутствует)
-func getOrCreateUUID() (string, error) {
-	uuid, err := readUUIDFromFile()
-	if err == nil {
-		return uuid, nil
-	}
-
-	// Если файл отсутствует, создаём новый UUID
-	uuid = generateUUID()
-	err = saveUUIDToFile(uuid)
-	if err != nil {
-		return "", fmt.Errorf("ошибка сохранения UUID: %v", err)
-	}
-
-	return uuid, nil
-}
-
-func ConnectToServer(serverURL, email string) (string, error) {
-	// Получаем или создаём UUID
-	uuid, err := getOrCreateUUID()
-	if err != nil {
-		return "", fmt.Errorf("ошибка получения UUID: %v", err)
-	}
-
-	// Формируем запрос
-	requestData := ConnectRequest{
-		Email: email,
-		UUID:  uuid,
-	}
-	requestBody, err := json.Marshal(requestData)
-	if err != nil {
-		return "", fmt.Errorf("ошибка формирования запроса: %v", err)
-	}
-
-	// Отправляем запрос на сервер
-	resp, err := http.Post(serverURL+"/connect", "application/json", bytes.NewBuffer(requestBody))
-	if err != nil {
-		return "", fmt.Errorf("ошибка отправки запроса: %v", err)
+		statusLabel.Text = "Registration failed!"
+		return
 	}
 	defer resp.Body.Close()
-
-	// Обрабатываем ответ
-	if resp.StatusCode != http.StatusOK {
-		body, _ := ioutil.ReadAll(resp.Body)
-		return "", fmt.Errorf("сервер вернул ошибку: %s", string(body))
+	if resp.StatusCode == http.StatusOK {
+		statusLabel.Text = "Registration successful! UUID: " + uuid
+	} else {
+		statusLabel.Text = "Registration failed!"
 	}
+}
 
-	var connectResponse ConnectResponse
-	if err := json.NewDecoder(resp.Body).Decode(&connectResponse); err != nil {
-		return "", fmt.Errorf("ошибка декодирования ответа: %v", err)
+func login() {
+	resp, err := http.PostForm("http://your_server_ip/login", map[string][]string{
+		"identifier": {usernameInput.Text()},
+		"password":   {passwordInput.Text()},
+	})
+	if err != nil {
+		statusLabel.Text = "Login failed!"
+		return
 	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		statusLabel.Text = "Login successful!"
+	} else {
+		statusLabel.Text = "Login failed!"
+	}
+}
 
-	// Возвращаем клиентскую конфигурацию
-	return connectResponse.ClientConfig, nil
+func connectVPN() {
+	cmd := exec.Command("v2ray", "-config=config.json")
+	err := cmd.Start()
+	if err != nil {
+		statusLabel.Text = "Failed to start VPN client!"
+		return
+	}
+	statusLabel.Text = "VPN client started successfully!"
+	time.Sleep(2 * time.Second)
+	cmd.Wait()
 }

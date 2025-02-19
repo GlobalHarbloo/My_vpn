@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
+	"vpn-service/models"
 
 	_ "github.com/lib/pq"
 	"golang.org/x/crypto/bcrypt"
@@ -42,42 +44,42 @@ func GetDB() *sql.DB {
 
 func RunMigration() {
 	sql := `
-	CREATE TABLE IF NOT EXISTS users (
-		id SERIAL PRIMARY KEY,
-		username VARCHAR(100) UNIQUE NOT NULL,
-		email VARCHAR(255) UNIQUE NOT NULL,
-		password VARCHAR(100) NOT NULL,
-		telegram_id BIGINT UNIQUE,
-		tariff_id INT DEFAULT 1,
-		used_traffic BIGINT DEFAULT 0,
-		subscription_start TIMESTAMP,
-		subscription_end TIMESTAMP,
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-	);
+    CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(100) UNIQUE NOT NULL,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password VARCHAR(100) NOT NULL,
+        telegram_id BIGINT UNIQUE,
+        tariff_id INT DEFAULT 1,
+        used_traffic BIGINT DEFAULT 0,
+        subscription_start TIMESTAMP,
+        subscription_end TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
 
-	CREATE TABLE IF NOT EXISTS tariffs (
-		id SERIAL PRIMARY KEY,
-		name VARCHAR(50) NOT NULL,
-		price DECIMAL(10, 2) NOT NULL,
-		traffic_limit BIGINT NOT NULL
-	);
+    CREATE TABLE IF NOT EXISTS tariffs (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(50) NOT NULL,
+        price DECIMAL(10, 2) NOT NULL,
+        traffic_limit BIGINT NOT NULL
+    );
 
-	CREATE TABLE IF NOT EXISTS payments (
-		id SERIAL PRIMARY KEY,
-		user_id INT REFERENCES users(id) ON DELETE CASCADE,
-		amount DECIMAL(10, 2),
-		status VARCHAR(50),
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-	);
+    CREATE TABLE IF NOT EXISTS payments (
+        id SERIAL PRIMARY KEY,
+        user_id INT REFERENCES users(id) ON DELETE CASCADE,
+        amount DECIMAL(10, 2),
+        status VARCHAR(50),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
 
-	CREATE TABLE IF NOT EXISTS sessions (
-		id SERIAL PRIMARY KEY,
-		user_id INT REFERENCES users(id) ON DELETE CASCADE,
-		start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		end_time TIMESTAMP,
-		data_usage BIGINT DEFAULT 0
-	);
-	`
+    CREATE TABLE IF NOT EXISTS sessions (
+        id SERIAL PRIMARY KEY,
+        user_id INT REFERENCES users(id) ON DELETE CASCADE,
+        start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        end_time TIMESTAMP,
+        data_usage BIGINT DEFAULT 0
+    );
+    `
 
 	_, err := db.Exec(sql)
 	if err != nil {
@@ -87,60 +89,83 @@ func RunMigration() {
 	logger.Println("Migrations completed successfully!")
 }
 
-type User struct {
-	ID                int
-	Username          string
-	Password          string
-	Email             string
-	TariffID          int
-	UsedTraffic       int64
-	SubscriptionStart sql.NullTime // Используем sql.NullTime для возможного NULL значения
-	SubscriptionEnd   sql.NullTime
-	CreatedAt         string
-}
-
-type Tariff struct {
-	ID           int
-	Name         string
-	Price        float64
-	TrafficLimit int64
-}
-
-// Функция авторизации пользователя
-// Функция авторизации пользователя с проверкой хешированного пароля
-// Функция авторизации пользователя с проверкой хешированного пароля
-func AuthenticateUser(identifier, password string) (*User, error) {
-	query := `
-        SELECT id, username, email, COALESCE(tariff_id, 1) AS tariff_id, used_traffic, 
-               subscription_start, subscription_end, created_at, password
-        FROM users
-        WHERE (username = $1 OR email = $1)
-    `
-	var user User
-	var storedPassword string
-
-	// Запросим пользователя и его хешированный пароль
-	err := db.QueryRow(query, identifier).Scan(
-		&user.ID, &user.Username, &user.Email, &user.TariffID, &user.UsedTraffic,
-		&user.SubscriptionStart, &user.SubscriptionEnd, &user.CreatedAt, &storedPassword,
-	)
+func RegisterUser(username, email, password string) (*models.User, error) {
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("user not found")
-		}
-		return nil, fmt.Errorf("error authenticating user: %v", err)
+		return nil, fmt.Errorf("failed to hash password: %v", err)
 	}
 
-	// Сравниваем пароли
+	query := `INSERT INTO users (username, email, password) VALUES ($1, $2, $3) RETURNING id, created_at`
+	var user models.User
+	err = db.QueryRow(query, username, email, hashedPassword).Scan(&user.ID, &user.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create user: %v", err)
+	}
+
+	user.Username = username
+	user.Email = email
+	user.Password = string(hashedPassword)
+
+	return &user, nil
+}
+
+func AuthenticateUser(identifier, password string) (*models.User, error) {
+	query := `SELECT id, username, email, password, tariff_id, used_traffic, subscription_start, subscription_end, created_at FROM users WHERE username = $1 OR email = $1`
+	var user models.User
+	var storedPassword string
+
+	err := db.QueryRow(query, identifier).Scan(&user.ID, &user.Username, &user.Email, &storedPassword, &user.TariffID, &user.UsedTraffic, &user.SubscriptionStart, &user.SubscriptionEnd, &user.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find user: %v", err)
+	}
+
 	err = bcrypt.CompareHashAndPassword([]byte(storedPassword), []byte(password))
 	if err != nil {
-		return nil, fmt.Errorf("incorrect password")
+		return nil, fmt.Errorf("invalid password: %v", err)
 	}
 
 	return &user, nil
 }
 
-// Привязка Telegram ID к пользователю
+func GetAllTariffs() ([]models.Tariff, error) {
+	query := `SELECT id, name, price, traffic_limit FROM tariffs`
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch tariffs: %v", err)
+	}
+	defer rows.Close()
+
+	var tariffs []models.Tariff
+	for rows.Next() {
+		var tariff models.Tariff
+		err := rows.Scan(&tariff.ID, &tariff.Name, &tariff.Price, &tariff.TrafficLimit)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan tariff: %v", err)
+		}
+		tariffs = append(tariffs, tariff)
+	}
+
+	return tariffs, nil
+}
+
+func CreateSession(session models.Session) error {
+	query := `INSERT INTO sessions (user_id, start_time, data_usage) VALUES ($1, $2, $3)`
+	_, err := db.Exec(query, session.UserID, session.StartTime, session.DataUsage)
+	if err != nil {
+		return fmt.Errorf("failed to create session: %v", err)
+	}
+	return nil
+}
+
+func EndSession(session models.Session) error {
+	query := `UPDATE sessions SET end_time = $1 WHERE id = $2`
+	_, err := db.Exec(query, time.Now(), session.ID)
+	if err != nil {
+		return fmt.Errorf("failed to end session: %v", err)
+	}
+	return nil
+}
+
 func LinkTelegramIDToUser(userID int, telegramID int64) error {
 	query := `UPDATE users SET telegram_id = $1 WHERE id = $2`
 	_, err := db.Exec(query, telegramID, userID)
@@ -151,27 +176,16 @@ func LinkTelegramIDToUser(userID int, telegramID int64) error {
 	return nil
 }
 
-// Поиск пользователя по Telegram ID
-func GetUserByTelegramID(telegramID int64) (*User, error) {
-	var user User
-
-	query := `SELECT id, username, email, password, tariff_id, used_traffic, subscription_start, subscription_end, created_at 
-	FROM users WHERE telegram_id = $1`
-	err := db.QueryRow(query, telegramID).Scan(&user.ID, &user.Username, &user.Email, &user.Password, &user.TariffID,
-		&user.UsedTraffic, &user.SubscriptionStart, &user.SubscriptionEnd, &user.CreatedAt)
+func GetUserByToken(token string) (*models.User, error) {
+	var user models.User
+	query := `SELECT id, username, email, password, tariff_id, used_traffic, subscription_start, subscription_end, created_at FROM users WHERE token = $1`
+	err := db.QueryRow(query, token).Scan(&user.ID, &user.Username, &user.Email, &user.Password, &user.TariffID, &user.UsedTraffic, &user.SubscriptionStart, &user.SubscriptionEnd, &user.CreatedAt)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			logger.Printf("User not found by Telegram ID: %v\n", telegramID)
-			return nil, fmt.Errorf("user not found")
-		}
-		logger.Printf("Error fetching user by Telegram ID: %v\n", err)
-		return nil, err
+		return nil, fmt.Errorf("failed to find user by token: %v", err)
 	}
-
 	return &user, nil
 }
 
-// Обновление пароля по email
 func UpdatePasswordByEmail(email, newPassword string) error {
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
@@ -190,78 +204,11 @@ func UpdatePasswordByEmail(email, newPassword string) error {
 	return nil
 }
 
-func GetAllTariffs() ([]Tariff, error) {
-	var tariffs []Tariff
-
-	query := `SELECT id, name, price, traffic_limit FROM tariffs`
-	rows, err := db.Query(query)
+func ProcessPayment(payment models.Payment) error {
+	query := `INSERT INTO payments (user_id, amount, status) VALUES ($1, $2, $3) RETURNING id, created_at`
+	err := db.QueryRow(query, payment.UserID, payment.Amount, payment.Status).Scan(&payment.ID, &payment.CreatedAt)
 	if err != nil {
-		logger.Printf("Error fetching tariffs: %v\n", err)
-		return nil, fmt.Errorf("error fetching tariffs: %v", err)
+		return fmt.Errorf("failed to process payment: %v", err)
 	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var tariff Tariff
-		err = rows.Scan(&tariff.ID, &tariff.Name, &tariff.Price, &tariff.TrafficLimit)
-		if err != nil {
-			logger.Printf("Error scanning tariff row: %v\n", err)
-			return nil, fmt.Errorf("error scanning tariff row: %v", err)
-		}
-		tariffs = append(tariffs, tariff)
-	}
-
-	if err == rows.Err() || err != nil {
-		logger.Printf("Error in rows iteration: %v\n", err)
-		return nil, fmt.Errorf("error in rows iteration: %v", err)
-	}
-
-	return tariffs, nil
-}
-
-// RegisterUser регистрирует нового пользователя в базе данных
-func RegisterUser(username, email, password string) (*User, error) {
-	// Проверка уникальности имени пользователя и email
-	var exists bool
-	checkQuery := `
-		SELECT EXISTS(
-			SELECT 1 
-			FROM users 
-			WHERE username = $1 OR email = $2
-		)
-	`
-	err := db.QueryRow(checkQuery, username, email).Scan(&exists)
-	if err != nil {
-		logger.Printf("Error checking user uniqueness: %v\n", err)
-		return nil, fmt.Errorf("error checking user uniqueness: %v", err)
-	}
-	if exists {
-		return nil, fmt.Errorf("username or email already exists")
-	}
-
-	// Хеширование пароля
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		logger.Printf("Failed to hash password: %v\n", err)
-		return nil, fmt.Errorf("failed to hash password: %v", err)
-	}
-
-	// Вставка нового пользователя в базу данных
-	insertQuery := `
-		INSERT INTO users (username, email, password, tariff_id, created_at)
-		VALUES ($1, $2, $3, 1, CURRENT_TIMESTAMP)  -- тариф по умолчанию 1
-		RETURNING id, username, email, tariff_id, used_traffic, subscription_start, subscription_end, created_at
-	`
-	var user User
-	err = db.QueryRow(insertQuery, username, email, hashedPassword).Scan(
-		&user.ID, &user.Username, &user.Email, &user.TariffID, &user.UsedTraffic,
-		&user.SubscriptionStart, &user.SubscriptionEnd, &user.CreatedAt,
-	)
-	if err != nil {
-		logger.Printf("Error registering user: %v\n", err)
-		return nil, fmt.Errorf("error registering user: %v", err)
-	}
-
-	logger.Printf("User registered successfully: %s\n", username)
-	return &user, nil
+	return nil
 }

@@ -3,10 +3,14 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/http"
+	"vpn-service/handlers"
 	"vpn-service/internal/database"
 	"vpn-service/internal/telegram"
 	"vpn-service/internal/vless"
 	"vpn-service/internal/wireguard"
+
+	"github.com/gorilla/mux"
 )
 
 func main() {
@@ -33,6 +37,17 @@ func main() {
 	telegram.InitBot(token)
 	telegram.StartBot()
 
-	// Блокировка основного потока, чтобы сервер продолжал работать
-	select {}
+	router := mux.NewRouter()
+
+	// Маршруты API
+	router.HandleFunc("/register", handlers.RegisterUser).Methods("POST")
+	router.HandleFunc("/login", handlers.LoginUser).Methods("POST")
+	router.HandleFunc("/profile", handlers.GetProfile).Methods("GET")
+	router.HandleFunc("/tariffs", handlers.GetTariffs).Methods("GET")
+	router.HandleFunc("/subscribe", handlers.Subscribe).Methods("POST")
+	router.HandleFunc("/connect", handlers.ConnectVPN).Methods("POST")
+	router.HandleFunc("/disconnect", handlers.DisconnectVPN).Methods("POST")
+
+	log.Println("Server started on port 8080")
+	log.Fatal(http.ListenAndServe(":8080", router))
 }
