@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"vpn-service/internal/auth"
 	"vpn-service/internal/database"
 	"vpn-service/models"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // Функция регистрации пользователя
@@ -15,6 +18,14 @@ func RegisterUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
+
+	// Хешируем пароль
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+	if err != nil {
+		http.Error(w, "Failed to hash password", http.StatusInternalServerError)
+		return
+	}
+	user.Password = string(hashedPassword)
 
 	createdUser, err := database.RegisterUser(user.Username, user.Email, user.Password)
 	if err != nil {
@@ -27,6 +38,7 @@ func RegisterUser(w http.ResponseWriter, r *http.Request) {
 }
 
 // Функция входа в систему
+
 func LoginUser(w http.ResponseWriter, r *http.Request) {
 	var creds models.Credentials
 	if err := json.NewDecoder(r.Body).Decode(&creds); err != nil {
@@ -35,13 +47,21 @@ func LoginUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user, err := database.AuthenticateUser(creds.Identifier, creds.Password)
-	if err != nil {
+	if err != nil || bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(creds.Password)) != nil {
 		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
 		return
 	}
 
+	// Генерируем JWT токен
+	token, err := auth.GenerateToken(user.ID)
+	if err != nil {
+		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]string{"token": token}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(user)
+	json.NewEncoder(w).Encode(response)
 }
 
 // Получение информации о пользователе (требует токен в заголовке)
@@ -91,6 +111,13 @@ func Subscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Продлеваем подписку на месяц
+	err = database.UpdateSubscription(payment.UserID)
+	if err != nil {
+		http.Error(w, "Failed to update subscription", http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(payment)
 }
@@ -121,9 +148,17 @@ func DisconnectVPN(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Завершаем сессию
 	err := database.EndSession(session)
 	if err != nil {
 		http.Error(w, "Failed to end session", http.StatusInternalServerError)
+		return
+	}
+
+	// Обновляем использованный трафик у пользователя
+	err = database.UpdateUsedTraffic(session.UserID, session.DataUsage)
+	if err != nil {
+		http.Error(w, "Failed to update traffic", http.StatusInternalServerError)
 		return
 	}
 

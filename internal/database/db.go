@@ -212,3 +212,14 @@ func ProcessPayment(payment models.Payment) error {
 	}
 	return nil
 }
+func UpdateUsedTraffic(userID int, dataUsage int64) error {
+	query := `UPDATE users SET used_traffic = used_traffic + $1 WHERE id = $2`
+	_, err := db.Exec(query, dataUsage, userID)
+	return err
+}
+
+func UpdateSubscription(userID int) error {
+	query := `UPDATE users SET subscription_end = subscription_end + INTERVAL '30 days' WHERE id = $1`
+	_, err := db.Exec(query, userID)
+	return err
+}
